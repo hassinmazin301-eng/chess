@@ -1,0 +1,5 @@
+{
+  "name": "Circular Chess 10x10",
+  "description": "A unique 10x10 chess game with circular board cells, disc-like pieces, and custom symbolic icons for dinosaurs, shields, and stars.",
+  "requestFramePermissions": []
+}
