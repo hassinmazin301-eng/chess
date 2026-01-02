@@ -3,8 +3,8 @@
 <html lang="ar" dir="rtl">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Circular Chess 10x10 Online</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>شطرنج 10*10 أونلاين</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -16,12 +16,12 @@
             background-color: #020617;
             color: #f8fafc;
             margin: 0;
-            overflow-x: hidden;
+            overflow: hidden;
+            touch-action: none;
         }
-        .chess-board {
-            display: grid;
-            grid-template-columns: repeat(10, 1fr);
-            gap: 2px;
+        #root {
+            height: 100dvh;
+            width: 100vw;
         }
     </style>
 <script type="importmap">
@@ -37,5 +37,7 @@
 </head>
 <body>
     <div id="root"></div>
+    <!-- الربط اليدوي لملف الـ Entry Point لضمان العمل على GitHub Pages -->
+    <script type="module" src="./index.tsx"></script>
 </body>
 </html>

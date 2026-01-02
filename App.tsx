@@ -68,6 +68,8 @@ const App: React.FC = () => {
   const [myColor, setMyColor] = useState<Color | null>(null);
   const [connectionStatus, setConnectionStatus] = useState<'idle' | 'waiting' | 'connected' | 'error'>('idle');
   const [roomId, setRoomId] = useState<string>('');
+  const [isLoading, setIsLoading] = useState(true);
+  
   const peerRef = useRef<any>(null);
   const connRef = useRef<any>(null);
 
@@ -75,11 +77,12 @@ const App: React.FC = () => {
     const urlParams = new URLSearchParams(window.location.search);
     const roomFromUrl = urlParams.get('room');
     
-    // We use a random ID if we can't get one from PeerJS immediately to avoid delays
+    // Initialize PeerJS
     const peer = new Peer();
     peerRef.current = peer;
 
     peer.on('open', (id: string) => {
+      setIsLoading(false);
       if (roomFromUrl) {
         setRoomId(roomFromUrl);
         setMyColor('black');
@@ -87,19 +90,16 @@ const App: React.FC = () => {
         const conn = peer.connect(roomFromUrl);
         setupConnection(conn);
       } else {
-        const shortId = id;
-        setRoomId(shortId);
+        setRoomId(id);
         setMyColor('white');
         setConnectionStatus('waiting');
         
-        // Use try-catch for pushState to avoid SecurityError in blob/sandboxed environments
         try {
           const newUrl = new URL(window.location.href);
-          newUrl.searchParams.set('room', shortId);
+          newUrl.searchParams.set('room', id);
           window.history.pushState({}, '', newUrl.toString());
         } catch (e) {
-          console.warn('Failed to update URL via pushState:', e);
-          // Fallback: stay on current URL, the "Copy Link" button will still work
+          console.warn('URL Update skipped:', e);
         }
       }
     });
@@ -112,8 +112,9 @@ const App: React.FC = () => {
     });
 
     peer.on('error', (err: any) => {
-      console.error('PeerJS error:', err);
+      console.error('Peer Error:', err);
       setConnectionStatus('error');
+      setIsLoading(false);
     });
 
     return () => peerRef.current?.destroy();
@@ -199,21 +200,19 @@ const App: React.FC = () => {
   };
 
   const copyInviteLink = () => {
-    // Construct a clean URL for sharing, even if current is a blob
     let shareUrl = window.location.href;
     try {
       const url = new URL(window.location.href);
       if (roomId) url.searchParams.set('room', roomId);
       shareUrl = url.toString();
     } catch (e) {
-      // If blob URL makes URL constructor fail, we use a simpler approach
       if (roomId && !shareUrl.includes('room=')) {
         shareUrl += (shareUrl.includes('?') ? '&' : '?') + 'room=' + roomId;
       }
     }
     
     navigator.clipboard.writeText(shareUrl).then(() => {
-      alert('تم نسخ رابط الدعوة بنجاح! أرسله للخصم.');
+      alert('تم نسخ الرابط! أرسله لمن تريد أن يلعب معك.');
     }).catch(() => {
       alert('الرابط: ' + shareUrl);
     });
@@ -223,61 +222,72 @@ const App: React.FC = () => {
     gameState.isCheck ? findKing(gameState.turn, gameState.board) : null
   , [gameState.isCheck, gameState.turn, gameState.board]);
 
+  if (isLoading) {
+    return (
+      <div className="h-screen w-screen flex flex-col items-center justify-center bg-slate-950 text-white gap-4">
+        <div className="w-12 h-12 border-4 border-amber-500 border-t-transparent rounded-full animate-spin"></div>
+        <p className="font-bold text-amber-500 animate-pulse">جاري تهيئة ساحة المعركة...</p>
+      </div>
+    );
+  }
+
   return (
-    <div className="h-screen w-screen flex flex-col items-center bg-slate-950 text-right overflow-hidden touch-none">
+    <div className="h-[100dvh] w-screen flex flex-col items-center bg-slate-950 text-right overflow-hidden touch-none select-none">
       
-      {/* Dynamic Header - Optimized for Mobile Height */}
-      <div className="w-full flex items-center justify-between px-4 py-2 bg-slate-900/90 border-b border-slate-800 backdrop-blur-md z-20">
-        <div className="flex items-center gap-2">
-          <div className={`w-2.5 h-2.5 rounded-full ${connectionStatus === 'connected' ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)]' : 'bg-amber-500 animate-pulse'}`} />
-          <span className="text-[10px] font-black text-slate-400">
-            {connectionStatus === 'connected' ? 'أونلاين' : 'انتظار...'}
-          </span>
-          <div className={`px-2 py-0.5 rounded-md text-[10px] font-black ${myColor === 'white' ? 'bg-white text-black' : 'bg-amber-600 text-white'}`}>
-            {myColor === 'white' ? 'أنت الأبيض' : 'أنت الأسود'}
+      {/* Header Panel */}
+      <div className="w-full flex items-center justify-between px-4 py-3 bg-slate-900/95 border-b border-slate-800 backdrop-blur-xl z-20 shadow-xl">
+        <div className="flex items-center gap-3">
+          <div className={`w-3 h-3 rounded-full ${connectionStatus === 'connected' ? 'bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.7)]' : 'bg-amber-500 animate-pulse'}`} />
+          <div className="flex flex-col">
+            <span className="text-[10px] font-black text-slate-400">
+              {connectionStatus === 'connected' ? 'متصل بالخصم' : 'بانتظار المنافس...'}
+            </span>
+            <span className={`text-[11px] font-black ${myColor === 'white' ? 'text-white' : 'text-amber-500'}`}>
+              أنت تلعب بـ {myColor === 'white' ? 'الأبيض' : 'الأسود'}
+            </span>
           </div>
         </div>
         
         <div className="flex gap-2">
           <button 
             onClick={copyInviteLink} 
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 rounded-lg text-white shadow-md text-[10px] font-bold transition-all"
+            className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 rounded-xl text-white shadow-lg text-xs font-black transition-all active:scale-95"
           >
-            <UI_ICONS.History size={12} />
+            <UI_ICONS.History size={14} />
             <span>دعوة</span>
           </button>
           <button 
             onClick={resetGame} 
-            className="p-1.5 bg-slate-800 hover:bg-slate-700 rounded-lg text-amber-500 border border-slate-700 transition-all"
+            className="p-2 bg-slate-800 hover:bg-slate-700 rounded-xl text-amber-500 border border-slate-700 shadow-md transition-all active:rotate-180"
           >
-            <UI_ICONS.RotateCcw size={14} />
+            <UI_ICONS.RotateCcw size={16} />
           </button>
         </div>
       </div>
 
-      {/* Main Content Area - Full screen flex container */}
-      <div className="flex-1 flex flex-col items-center justify-between w-full p-2 max-w-lg mx-auto overflow-hidden">
+      {/* Game Content */}
+      <div className="flex-1 flex flex-col items-center justify-around w-full p-2 max-w-lg mx-auto overflow-hidden">
         
-        {/* Top Info Bar */}
-        <div className="w-full flex justify-between items-center px-2 py-1">
-          <div className={`flex items-center flex-row-reverse gap-3 px-3 py-1.5 rounded-xl border-2 transition-all ${
+        {/* Turn Status */}
+        <div className="w-full flex justify-between items-center px-3">
+          <div className={`flex items-center flex-row-reverse gap-3 px-4 py-2 rounded-2xl border-2 transition-all shadow-md ${
             gameState.turn === 'white' ? 'bg-white/5 border-white/20' : 'bg-amber-500/5 border-amber-500/20'
           }`}>
-            <div className={`w-4 h-4 rounded-full border shadow-sm ${gameState.turn === 'white' ? 'bg-white' : 'bg-black border-amber-600'}`} />
-            <span className="text-xs font-black text-slate-100">دور {gameState.turn === 'white' ? 'الأبيض' : 'الأسود'}</span>
+            <div className={`w-5 h-5 rounded-full border-2 shadow-inner ${gameState.turn === 'white' ? 'bg-white border-slate-300' : 'bg-black border-amber-600'}`} />
+            <span className="text-sm font-black text-slate-100">دور {gameState.turn === 'white' ? 'الأبيض' : 'الأسود'}</span>
           </div>
           {gameState.isCheck && !gameState.isGameOver && (
-            <div className="px-3 py-1 bg-red-500/20 border border-red-500/40 rounded-lg text-red-500 text-[10px] font-black animate-bounce shadow-lg">
+            <div className="px-4 py-1.5 bg-red-600/20 border-2 border-red-500/50 rounded-xl text-red-500 text-xs font-black animate-bounce shadow-lg">
               ⚠️ كش ملك!
             </div>
           )}
         </div>
 
-        {/* The Board - Square centered container */}
-        <div className="relative flex items-center justify-center w-full aspect-square max-w-[min(90vw,480px)]">
-          <div className="absolute inset-0 bg-slate-800/20 rounded-[40px] blur-2xl -z-10" />
-          <div className="p-1.5 bg-slate-900 rounded-[35px] shadow-[0_20px_50px_rgba(0,0,0,0.5)] border-4 border-slate-800">
-            <div className={`chess-board w-[82vw] h-[82vw] max-w-[420px] max-h-[420px] gap-1 ${myColor === 'black' ? 'rotate-180' : ''}`}>
+        {/* Board Container */}
+        <div className="relative flex items-center justify-center w-full aspect-square max-w-[min(88vw,480px)]">
+          <div className="absolute inset-0 bg-amber-500/5 rounded-[40px] blur-3xl -z-10" />
+          <div className="p-2 bg-slate-900 rounded-[40px] shadow-[0_25px_60px_rgba(0,0,0,0.6)] border-[6px] border-slate-800">
+            <div className={`chess-board w-[80vw] h-[80vw] max-w-[420px] max-h-[420px] gap-1 ${myColor === 'black' ? 'rotate-180' : ''}`}>
               {gameState.board.map((row, rIdx) => 
                 row.map((piece, cIdx) => {
                   const isSelected = gameState.selectedPiece?.position[0] === rIdx && gameState.selectedPiece?.position[1] === cIdx;
@@ -290,25 +300,24 @@ const App: React.FC = () => {
                       key={`${rIdx}-${cIdx}`}
                       onClick={() => handleCellClick(rIdx, cIdx)}
                       className={`
-                        relative flex items-center justify-center cursor-pointer aspect-square rounded-full transition-all duration-150
+                        relative flex items-center justify-center cursor-pointer aspect-square rounded-full transition-all duration-200
                         ${isEven ? 'bg-slate-800/40' : 'bg-slate-900/60'}
-                        ${isSelected ? 'ring-2 ring-amber-500 bg-amber-500/20 z-10 scale-105 shadow-[0_0_15px_rgba(245,158,11,0.4)]' : ''}
-                        ${isKingCheckHighlight ? 'bg-red-500/30 ring-2 ring-red-500 shadow-[0_0_15px_rgba(239,68,68,0.4)]' : ''}
-                        ${isValidMoveCandidate ? 'bg-emerald-500/20 after:content-[""] after:w-1.5 after:h-1.5 after:bg-emerald-500 after:rounded-full after:animate-pulse' : ''}
+                        ${isSelected ? 'ring-2 ring-amber-500 bg-amber-500/20 z-10 scale-110 shadow-xl' : ''}
+                        ${isKingCheckHighlight ? 'bg-red-500/40 ring-2 ring-red-500 animate-pulse' : ''}
+                        ${isValidMoveCandidate ? 'bg-emerald-500/20 after:content-[""] after:w-2 after:h-2 after:bg-emerald-500 after:rounded-full after:shadow-[0_0_10px_rgba(16,185,129,0.8)]' : ''}
                       `}
                     >
                       {piece && (
                         <div className={`
-                          relative w-[85%] h-[85%] rounded-full shadow-lg flex items-center justify-center transition-transform active:scale-90 ${myColor === 'black' ? 'rotate-180' : ''}
+                          relative w-[88%] h-[88%] rounded-full shadow-2xl flex items-center justify-center transition-transform active:scale-90 ${myColor === 'black' ? 'rotate-180' : ''}
                           ${piece.color === 'white' 
-                            ? 'bg-gradient-to-br from-white to-slate-200 text-slate-900 border border-slate-300' 
-                            : 'bg-gradient-to-br from-slate-700 to-black text-amber-500 border border-slate-800'}
+                            ? 'bg-gradient-to-br from-white via-slate-100 to-slate-300 text-slate-900 border border-slate-400' 
+                            : 'bg-gradient-to-br from-slate-700 via-slate-900 to-black text-amber-500 border border-slate-800 shadow-inner'}
                         `}>
                           {(() => {
                             const IconComponent = PieceIcons[piece.type];
-                            return <IconComponent className="w-[55%] h-[55%] drop-shadow-sm" />;
+                            return <IconComponent className="w-[55%] h-[55%] drop-shadow-lg" />;
                           })()}
-                          <div className="absolute top-[10%] left-[15%] w-1/4 h-1/5 bg-white/20 rounded-full blur-[1px] rotate-[-15deg]" />
                         </div>
                       )}
                     </div>
@@ -319,43 +328,49 @@ const App: React.FC = () => {
           </div>
         </div>
 
-        {/* Bottom Panel - History & Status */}
-        <div className="w-full flex flex-col gap-2 pb-4">
-           {gameState.turn !== myColor && !gameState.isGameOver && (
-              <div className="text-center text-[10px] text-indigo-400 font-bold animate-pulse">بانتظار حركة الخصم...</div>
-           )}
-           <div className="flex flex-row-reverse gap-2 overflow-x-auto pb-1 px-2 custom-scrollbar no-scrollbar">
+        {/* History Area */}
+        <div className="w-full flex flex-col gap-3 pb-6">
+           <div className="flex flex-row-reverse gap-2 overflow-x-auto pb-2 px-4 no-scrollbar">
              {gameState.history.length === 0 ? (
-               <div className="w-full py-2 text-center text-[10px] text-slate-700 font-bold italic">لا توجد حركات في السجل</div>
+               <div className="w-full text-center text-[10px] text-slate-600 font-bold uppercase tracking-widest py-2">
+                 بانتظار الخطوة الأولى...
+               </div>
              ) : (
-               gameState.history.slice(0, 8).map((move, i) => (
-                <div key={i} className="whitespace-nowrap bg-slate-900/60 px-3 py-2 rounded-xl border border-slate-800/50 text-[10px] font-mono text-slate-400 flex items-center gap-1.5">
-                  <span className="text-amber-500/60 font-black">#{gameState.history.length - i}</span>
-                  <span className="text-slate-200">{move}</span>
+               gameState.history.slice(0, 10).map((move, i) => (
+                <div key={i} className="whitespace-nowrap bg-slate-900/80 px-4 py-2.5 rounded-2xl border border-slate-800 shadow-lg text-[11px] font-mono text-slate-300 flex items-center gap-2">
+                  <span className="text-amber-500 font-black">#{gameState.history.length - i}</span>
+                  <span className="font-bold">{move}</span>
                 </div>
                ))
              )}
            </div>
+           {gameState.turn !== myColor && !gameState.isGameOver && (
+              <div className="text-center">
+                <span className="inline-block px-4 py-1 bg-slate-800/50 rounded-full text-[10px] text-indigo-400 font-black animate-pulse border border-indigo-500/20">
+                   انتظر... الخصم يخطط لهجوم
+                </span>
+              </div>
+           )}
         </div>
       </div>
 
-      {/* Game Over Modal */}
+      {/* Modals */}
       {gameState.isGameOver && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/95 backdrop-blur-xl p-6 transition-all">
-          <div className="bg-slate-900 p-8 rounded-[40px] border-2 border-amber-500 shadow-[0_0_50px_rgba(245,158,11,0.2)] w-full max-w-xs text-center transform scale-110">
-            <div className="mb-4 relative">
-              <UI_ICONS.Trophy size={64} className="mx-auto text-amber-500 animate-bounce" />
-              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-20 h-20 bg-amber-500/20 blur-2xl -z-10 rounded-full" />
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/98 backdrop-blur-2xl p-6">
+          <div className="bg-slate-900 p-10 rounded-[50px] border-2 border-amber-500 shadow-[0_0_80px_rgba(245,158,11,0.25)] w-full max-w-xs text-center">
+            <div className="relative mb-6">
+              <UI_ICONS.Trophy size={72} className="mx-auto text-amber-500 animate-bounce" />
+              <div className="absolute inset-0 bg-amber-500/20 blur-3xl -z-10 rounded-full" />
             </div>
-            <h2 className="text-3xl font-black text-white mb-1">{gameState.winner === 'draw' ? 'تعادل' : 'كش مات!'}</h2>
-            <p className="text-lg text-amber-400 font-bold mb-8">
-               {gameState.winner === 'draw' ? 'انتهى النزال بالتعادل' : `بطل الميدان: ${gameState.winner === 'white' ? 'الأبيض' : 'الأسود'}`}
+            <h2 className="text-3xl font-black text-white mb-2">{gameState.winner === 'draw' ? 'تعادل عادل' : 'انتصار مجيد!'}</h2>
+            <p className="text-lg text-amber-400 font-bold mb-10">
+               {gameState.winner === 'draw' ? 'كلاكما محارب عظيم' : `الفوز لـ ${gameState.winner === 'white' ? 'الجيش الأبيض' : 'الجيش الأسود'}`}
             </p>
             <button 
               onClick={resetGame} 
-              className="w-full bg-gradient-to-r from-amber-500 to-amber-600 text-slate-950 font-black py-4 rounded-2xl shadow-xl active:scale-95 transition-transform"
+              className="w-full bg-gradient-to-r from-amber-500 to-amber-600 text-slate-950 font-black py-5 rounded-3xl shadow-2xl active:scale-95 transition-all transform uppercase tracking-tighter"
             >
-              نزال جديد
+              بدء نزال جديد
             </button>
           </div>
         </div>
@@ -363,8 +378,6 @@ const App: React.FC = () => {
 
       <style>{`
         .chess-board { display: grid; grid-template-columns: repeat(10, 1fr); }
-        .custom-scrollbar::-webkit-scrollbar { height: 3px; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: #334155; border-radius: 10px; }
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
       `}</style>
