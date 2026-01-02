@@ -1,14 +1,14 @@
 
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
-import { Color, Piece, PieceType, GameState } from './types';
-import { PieceIcons, UI_ICONS } from './constants';
+import { Color, Piece, PieceType, GameState } from './types.ts';
+import { PieceIcons, UI_ICONS } from './constants.tsx';
 import { 
   getLegalMoves, 
   isKingInCheck, 
   hasAnyLegalMoves, 
   simulateMove,
   findKing 
-} from './utils/moveLogic';
+} from './utils/moveLogic.ts';
 
 declare var Peer: any;
 
@@ -77,47 +77,64 @@ const App: React.FC = () => {
     const urlParams = new URLSearchParams(window.location.search);
     const roomFromUrl = urlParams.get('room');
     
-    // Initialize PeerJS
-    const peer = new Peer();
-    peerRef.current = peer;
+    // تأمين ظهور اللعبة حتى لو فشل الاتصال بعد 5 ثواني
+    const timeout = setTimeout(() => {
+      if (isLoading) {
+        setIsLoading(false);
+        if (!myColor) setMyColor('white'); // افتراض اللعب الفردي في حال تعثر الشبكة
+      }
+    }, 5000);
 
-    peer.on('open', (id: string) => {
-      setIsLoading(false);
-      if (roomFromUrl) {
-        setRoomId(roomFromUrl);
-        setMyColor('black');
-        setConnectionStatus('waiting');
-        const conn = peer.connect(roomFromUrl);
-        setupConnection(conn);
-      } else {
-        setRoomId(id);
-        setMyColor('white');
-        setConnectionStatus('waiting');
-        
-        try {
-          const newUrl = new URL(window.location.href);
-          newUrl.searchParams.set('room', id);
-          window.history.pushState({}, '', newUrl.toString());
-        } catch (e) {
-          console.warn('URL Update skipped:', e);
+    // تهيئة PeerJS
+    try {
+      const peer = new Peer();
+      peerRef.current = peer;
+
+      peer.on('open', (id: string) => {
+        clearTimeout(timeout);
+        setIsLoading(false);
+        if (roomFromUrl) {
+          setRoomId(roomFromUrl);
+          setMyColor('black');
+          setConnectionStatus('waiting');
+          const conn = peer.connect(roomFromUrl);
+          setupConnection(conn);
+        } else {
+          setRoomId(id);
+          setMyColor('white');
+          setConnectionStatus('waiting');
+          
+          try {
+            const newUrl = new URL(window.location.href);
+            newUrl.searchParams.set('room', id);
+            window.history.pushState({}, '', newUrl.toString());
+          } catch (e) { console.warn(e); }
         }
-      }
-    });
+      });
 
-    peer.on('connection', (conn: any) => {
-      if (!connRef.current) {
-        setupConnection(conn);
-        setConnectionStatus('connected');
-      }
-    });
+      peer.on('connection', (conn: any) => {
+        if (!connRef.current) {
+          setupConnection(conn);
+          setConnectionStatus('connected');
+        }
+      });
 
-    peer.on('error', (err: any) => {
-      console.error('Peer Error:', err);
-      setConnectionStatus('error');
+      peer.on('error', (err: any) => {
+        console.error('Peer Error:', err);
+        setConnectionStatus('error');
+        setIsLoading(false);
+        if (!myColor) setMyColor('white');
+      });
+    } catch (e) {
+      console.error('Peer Init Failed:', e);
       setIsLoading(false);
-    });
+      setMyColor('white');
+    }
 
-    return () => peerRef.current?.destroy();
+    return () => {
+      clearTimeout(timeout);
+      peerRef.current?.destroy();
+    };
   }, []);
 
   const setupConnection = (conn: any) => {
@@ -130,7 +147,10 @@ const App: React.FC = () => {
   };
 
   const handleCellClick = (row: number, col: number) => {
-    if (gameState.isGameOver || gameState.turn !== myColor) return;
+    // السماح باللعب حتى لو لم يكن هناك اتصال (طور التجربة)
+    const canMove = gameState.turn === myColor || connectionStatus === 'idle' || connectionStatus === 'error' || connectionStatus === 'waiting';
+    if (gameState.isGameOver || !canMove) return;
+
     const clickedPiece = gameState.board[row][col];
 
     if (gameState.selectedPiece) {
@@ -224,9 +244,15 @@ const App: React.FC = () => {
 
   if (isLoading) {
     return (
-      <div className="h-screen w-screen flex flex-col items-center justify-center bg-slate-950 text-white gap-4">
-        <div className="w-12 h-12 border-4 border-amber-500 border-t-transparent rounded-full animate-spin"></div>
-        <p className="font-bold text-amber-500 animate-pulse">جاري تهيئة ساحة المعركة...</p>
+      <div className="h-screen w-screen flex flex-col items-center justify-center bg-[#020617] text-white gap-6">
+        <div className="relative">
+          <div className="w-20 h-20 border-4 border-amber-500/20 rounded-full"></div>
+          <div className="absolute top-0 left-0 w-20 h-20 border-4 border-amber-500 border-t-transparent rounded-full animate-spin"></div>
+        </div>
+        <div className="flex flex-col items-center gap-2">
+           <p className="text-2xl font-black text-amber-500 tracking-widest animate-pulse">شطرنج 10*10</p>
+           <p className="text-xs text-slate-500 font-bold">جاري البحث عن اتصال آمن...</p>
+        </div>
       </div>
     );
   }
@@ -243,7 +269,7 @@ const App: React.FC = () => {
               {connectionStatus === 'connected' ? 'متصل بالخصم' : 'بانتظار المنافس...'}
             </span>
             <span className={`text-[11px] font-black ${myColor === 'white' ? 'text-white' : 'text-amber-500'}`}>
-              أنت تلعب بـ {myColor === 'white' ? 'الأبيض' : 'الأسود'}
+              {myColor === 'white' ? 'الجيش الأبيض' : 'الجيش الأسود'}
             </span>
           </div>
         </div>
@@ -344,7 +370,7 @@ const App: React.FC = () => {
                ))
              )}
            </div>
-           {gameState.turn !== myColor && !gameState.isGameOver && (
+           {(gameState.turn !== myColor && connectionStatus === 'connected') && (
               <div className="text-center">
                 <span className="inline-block px-4 py-1 bg-slate-800/50 rounded-full text-[10px] text-indigo-400 font-black animate-pulse border border-indigo-500/20">
                    انتظر... الخصم يخطط لهجوم
