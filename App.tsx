@@ -81,12 +81,17 @@ const App: React.FC = () => {
     const timeout = setTimeout(() => {
       if (isLoading) {
         setIsLoading(false);
-        if (!myColor) setMyColor('white'); // افتراض اللعب الفردي في حال تعثر الشبكة
+        if (!myColor) setMyColor('white');
       }
     }, 5000);
 
-    // تهيئة PeerJS
     try {
+      if (typeof Peer === 'undefined') {
+         setIsLoading(false);
+         setMyColor('white');
+         return;
+      }
+
       const peer = new Peer();
       peerRef.current = peer;
 
@@ -120,20 +125,18 @@ const App: React.FC = () => {
       });
 
       peer.on('error', (err: any) => {
-        console.error('Peer Error:', err);
         setConnectionStatus('error');
         setIsLoading(false);
         if (!myColor) setMyColor('white');
       });
     } catch (e) {
-      console.error('Peer Init Failed:', e);
       setIsLoading(false);
       setMyColor('white');
     }
 
     return () => {
       clearTimeout(timeout);
-      peerRef.current?.destroy();
+      if (peerRef.current) peerRef.current.destroy();
     };
   }, []);
 
@@ -147,7 +150,6 @@ const App: React.FC = () => {
   };
 
   const handleCellClick = (row: number, col: number) => {
-    // السماح باللعب حتى لو لم يكن هناك اتصال (طور التجربة)
     const canMove = gameState.turn === myColor || connectionStatus === 'idle' || connectionStatus === 'error' || connectionStatus === 'waiting';
     if (gameState.isGameOver || !canMove) return;
 
@@ -201,7 +203,9 @@ const App: React.FC = () => {
     };
 
     setGameState(nextState);
-    connRef.current?.send({ type: 'MOVE', state: nextState });
+    if (connRef.current && connRef.current.open) {
+      connRef.current.send({ type: 'MOVE', state: nextState });
+    }
   };
 
   const resetGame = () => {
@@ -216,7 +220,9 @@ const App: React.FC = () => {
       isCheck: false
     };
     setGameState(newState);
-    connRef.current?.send({ type: 'RESET', state: newState });
+    if (connRef.current && connRef.current.open) {
+      connRef.current.send({ type: 'RESET', state: newState });
+    }
   };
 
   const copyInviteLink = () => {
@@ -233,8 +239,6 @@ const App: React.FC = () => {
     
     navigator.clipboard.writeText(shareUrl).then(() => {
       alert('تم نسخ الرابط! أرسله لمن تريد أن يلعب معك.');
-    }).catch(() => {
-      alert('الرابط: ' + shareUrl);
     });
   };
 
@@ -370,13 +374,6 @@ const App: React.FC = () => {
                ))
              )}
            </div>
-           {(gameState.turn !== myColor && connectionStatus === 'connected') && (
-              <div className="text-center">
-                <span className="inline-block px-4 py-1 bg-slate-800/50 rounded-full text-[10px] text-indigo-400 font-black animate-pulse border border-indigo-500/20">
-                   انتظر... الخصم يخطط لهجوم
-                </span>
-              </div>
-           )}
         </div>
       </div>
 
